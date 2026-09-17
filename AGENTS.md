@@ -27,6 +27,7 @@ Runs on `http://0.0.0.0:8000`
 - `DB_USER` - Database user, default: `postgres`
 - `DB_PASSWORD` - Database password
 - `GITHUB_TOKEN` - GitHub API token (optional, increases rate limit)
+- `CORS_ORIGINS` - Comma-separated allowed origins (e.g. `https://your-frontend.vercel.app`)
 
 ## Project Structure
 

@@ -68,6 +68,7 @@ The server runs on `http://0.0.0.0:8000`
 | `DB_USER` | PostgreSQL username | `postgres` |
 | `DB_PASSWORD` | PostgreSQL password | Required |
 | `GITHUB_TOKEN` | GitHub API token | Optional |
+| `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `https://your-frontend.vercel.app` |
 | `BASE_PROMPT` | Base prompt template | Optional |
 
 ## Requirements
