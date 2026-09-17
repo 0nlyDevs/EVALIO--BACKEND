@@ -1,10 +1,4 @@
 import asyncio
-import base64
-import re
-from requests import Session
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-
 from fastapi import APIRouter, Request, HTTPException
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -14,6 +8,7 @@ from psycopg2.extras import RealDictCursor
 import json
 import os
 from ddgs import DDGS
+from gitingest import ingest
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -41,7 +36,6 @@ def run_search(query: str, max_results: int = 5) -> str:
         if not results:
             return "No relevant search results found."
 
-        # Extract useful text
         formatted = []
         for r in results:
             title = r.get("title", "")
@@ -83,7 +77,7 @@ Rules:
                 "human",
                 """Project Idea: {idea}
 {readme_info}
-Web &&&  (for market data only):
+Web search (for market data only):
 {search_results}
 
 Question: {question}
@@ -147,7 +141,6 @@ No sufficient README data available. The project does not have a meaningful READ
         results.append({"question": question, "answer": answer})
         print(f"Answer: {answer[:100]}...")
 
-    # Theme matching
     theme_system = "Match this idea to one theme. Return ONLY the theme name."
     if BASE_PROMPT:
         theme_system = BASE_PROMPT + "\n\n" + theme_system
@@ -162,7 +155,7 @@ No sufficient README data available. The project does not have a meaningful READ
     theme_chain = theme_prompt | llm | StrOutputParser()
     try:
         matched_theme = theme_chain.invoke({"themes": theme, "idea": idea})
-        matched_theme = matched_theme.strip().split("\n")[0]  # Take first line only
+        matched_theme = matched_theme.strip().split("\n")[0]
     except:
         matched_theme = "General"
 
@@ -203,7 +196,6 @@ async def market_agent_analyze(request: Request):
             raise HTTPException(status_code=400, detail="Idea is required")
 
         if not theme:
-            # Get theme from database if not provided
             try:
                 conn = get_database_connection()
                 cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -232,94 +224,6 @@ async def market_agent_analyze(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def fetch_readme(owner: str, repo: str) -> str:
-    """Fetch README content from GitHub repository"""
-    session = get_github_session()
-    default_branch = get_default_branch(owner, repo)
-
-    readme_names = [
-        "README.md",
-        "README.rst",
-        "README.txt",
-        "README",
-        "readme.md",
-        "readme.rst",
-        "readme.txt",
-        "readme",
-    ]
-
-    for readme_name in readme_names:
-        url = f"https://api.github.com/repos/{owner}/{repo}/contents/{readme_name}?ref={default_branch}"
-        response = session.get(url, headers=get_github_headers())
-
-        if response.status_code == 200:
-            data = response.json()
-            content = data.get("content", "")
-            encoding = data.get("encoding", "")
-
-            if encoding == "base64" and content:
-                try:
-                    decoded = base64.b64decode(content).decode("utf-8")
-                    return decoded.strip()
-                except:
-                    pass
-
-    return ""
-
-
-def get_github_session():
-    """Create a requests session with retry logic"""
-    session = Session()
-    retry_strategy = Retry(
-        total=3,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET"],
-    )
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-    return session
-
-
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
-
-
-def get_github_headers():
-    """Get headers for GitHub API requests"""
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    if GITHUB_TOKEN:
-        headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
-    return headers
-
-
-def get_default_branch(owner: str, repo: str) -> str:
-    """Get the default branch of a repository"""
-    session = get_github_session()
-    url = f"https://api.github.com/repos/{owner}/{repo}"
-    response = session.get(url, headers=get_github_headers())
-    if response.status_code == 404:
-        return "main"
-    response.raise_for_status()
-    return response.json().get("default_branch", "main")
-
-
-def parse_repo_url(repo_url: str):
-    """Extract owner and repo from URL"""
-    owner, repo = None, None
-    if repo_url:
-        match = re.search(
-            r"github\.com/([^/]+)/([^/?#]+?)(?:\.git)?(?:/|$|[?#])", repo_url
-        )
-        if match:
-            owner = match.group(1)
-            repo = match.group(2).replace(".git", "").split("/")[0]
-    return owner, repo
-
-
 async def invoke_market_agent(
     project_id: str, idea: str, github_link: str = None, hackathon_id: int = None
 ):
@@ -340,12 +244,15 @@ async def invoke_market_agent(
 
         readme_content = ""
         if github_link:
-            owner, repo = parse_repo_url(github_link)
-            if owner and repo:
-                readme_content = fetch_readme(owner, repo)
+            try:
+                summary, tree, content = ingest(github_link)
+                readme_content = content[:5000] if content else ""
                 print(
-                    f"Market Agent: Fetched README ({len(readme_content)} chars) from {owner}/{repo}"
+                    f"Market Agent: Ingested content ({len(readme_content)} chars) from {github_link}"
                 )
+            except Exception as e:
+                print(f"Market Agent: Failed to fetch repo content: {e}")
+                readme_content = ""
 
         result = await analyze_market(idea, "", readme_content)
 
@@ -359,9 +266,7 @@ async def invoke_market_agent(
         cur.close()
         conn.close()
 
-        # Generate overall score after market analysis
         from agents.codeagent import generate_overall_project_score
-
         generate_overall_project_score(project_id)
 
         print(f"Market Agent: Analysis complete for project {project_id}")
