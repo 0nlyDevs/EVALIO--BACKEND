@@ -16,8 +16,8 @@ Runs on `http://0.0.0.0:8000`
 
 ## Required Environment Variables
 
-- `OPENROUTER_API_KEY` - LLM API key
-- `LLM_BASE_URL` - LLM API base URL, default: `https://openrouter.ai/api/v1`
+- `LLM_API_KEY` - LLM API key
+- `LLM_BASE_URL` - LLM API base URL
 - `FREE_LLM_MODEL` - Default: `liquid/lfm-2.5-1.2b-thinking:free`
 - `HF_TOKEN` - HuggingFace token
 - `EMBEDDING_MODEL` - Default: `sentence-transformers/all-MiniLM-L6-v2`

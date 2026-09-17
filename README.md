@@ -28,7 +28,7 @@ An AI-powered hackathon project evaluation platform that automates code analysis
 cp .env.example .env
 ```
 Edit `.env` and fill in your values:
-- `OPENROUTER_API_KEY` - Your LLM API key
+- `LLM_API_KEY` - Your LLM API key
 - `HF_TOKEN` - HuggingFace token for embeddings
 - `DB_USER`, `DB_PASSWORD` - PostgreSQL credentials
 - `GITHUB_TOKEN` - GitHub API token (optional)
@@ -52,7 +52,7 @@ The server runs on `http://0.0.0.0:8000`
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OPENROUTER_API_KEY` | LLM API key | Required |
+| `LLM_API_KEY` | LLM API key | Required |
 | `FREE_LLM_MODEL` | LLM model to use | `liquid/lfm-2.5-1.2b-thinking:free` |
 | `HF_TOKEN` | HuggingFace token | Required |
 | `EMBEDDING_MODEL` | Embedding model | `sentence-transformers/all-MiniLM-L6-v2` |
