@@ -43,6 +43,9 @@ All agents mounted under `/api` prefix.
 
 ## API Endpoints
 
+### Health Check
+- `GET /health` - Basic health check (`{"status": "ok"}`)
+
 ### Hackathons
 - `POST /api/create-hackathon` - Create hackathon with `criteria` (e.g., "Code Quality, Innovation, Tech Stack")
 - `GET /api/get-hackathon/{id}` - Get hackathon details

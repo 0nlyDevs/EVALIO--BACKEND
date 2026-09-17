@@ -34,5 +34,10 @@ app.include_router(codeAgent_router, prefix="/api", tags=["Code Agent"])
 app.include_router(chatAgent_router, prefix="/api", tags=["Chat Agent"])
 app.include_router(crudAgent_router, prefix="/api", tags=["CRUD Agent"])
 
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
 if __name__ == "__main__":
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)
