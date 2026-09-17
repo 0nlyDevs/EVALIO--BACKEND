@@ -25,6 +25,7 @@ transformers>=4.36.0
 
 # Git Integration
 gitpython>=3.1.40
+gitingest>=0.3.0
 
 # Web Search
 ddgs>=1.0.0

@@ -6,201 +6,94 @@
 python server.py
 ```
 
-Runs on `http://0.0.0.0:8000`
+Runs on `http://0.0.0.0:8000`. Swagger UI at `/docs`, ReDoc at `/redoc`.
 
-## Setup Requirements
+## Setup
 
 1. Copy `.env.example` to `.env` and fill in values
 2. PostgreSQL must be reachable (configure `DB_HOST`, `DB_PORT`, `DB_NAME`)
 3. Install deps: `pip install -r requirements.txt`
 
-## Required Environment Variables
+## Environment Variables
 
-- `LLM_API_KEY` - LLM API key
-- `LLM_BASE_URL` - LLM API base URL
+- `LLM_API_KEY` - LLM API key (required)
+- `LLM_BASE_URL` - LLM API endpoint (e.g. `https://api.example.com/v1`)
 - `FREE_LLM_MODEL` - Default: `liquid/lfm-2.5-1.2b-thinking:free`
-- `HF_TOKEN` - HuggingFace token
+- `HF_TOKEN` - HuggingFace token (required, used for embeddings download)
 - `EMBEDDING_MODEL` - Default: `sentence-transformers/all-MiniLM-L6-v2`
-- `DB_HOST` - Database host, default: `localhost`
-- `DB_PORT` - Database port, default: `5432`
-- `DB_NAME` - Database name, default: `evalio`
-- `DB_USER` - Database user, default: `postgres`
-- `DB_PASSWORD` - Database password
-- `GITHUB_TOKEN` - GitHub API token (optional, increases rate limit)
-- `CORS_ORIGINS` - Comma-separated allowed origins (e.g. `https://your-frontend.vercel.app`)
+- `BASE_PROMPT` - Optional base prompt prepended to all LLM system prompts
+- `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` - PostgreSQL (defaults: `localhost` / `5432` / `evalio` / `postgres` / `postgres`)
+- `GITHUB_TOKEN` - GitHub token for gitingest (optional, used for private repos)
+- `CORS_ORIGINS` - Comma-separated allowed origins. When unset or empty, allows ALL origins (`*`)
 
 ## Project Structure
 
-- `server.py` - FastAPI entry point; loads `.env` via `dotenv`, initializes DB on startup
-- `db.py` - PostgreSQL connection (host/port/database from env) and table creation
-- `agents/` - Contains 4 agent routers:
-  - `marketagent.py` - Market analysis (web search + README analysis)
-  - `codeagent.py` - Code analysis (GitHub repo analysis via API)
-  - `chatagent.py` - Chat functionality
-  - `crudagent.py` - CRUD operations + LLM-based scoring
+- `server.py` - FastAPI entry point; loads `.env` via `dotenv`, initializes DB on startup, mounts all agent routers under `/api`
+- `db.py` - PostgreSQL connection via `psycopg2` and `init_db()` that creates tables + runs migrations
+- `agents/` - Four agent routers:
+  - `crudagent.py` - CRUD operations, LLM-based scoring (`generate_overall_score`), semantic search
+  - `codeagent.py` - GitHub repo analysis via gitingest (clones repo, extracts content, builds Chroma vectorstore, evaluates criteria)
+  - `marketagent.py` - Market analysis (fetches README via gitingest, web search via `ddgs`, evaluates market questions)
+  - `chatagent.py` - Chat with project context (simple chat + project-aware chat)
 
-All agents mounted under `/api` prefix.
+## Key Architecture Notes
+
+- **Gitingest**: Repo content fetched via `gitingest` Python package (clones temporarily, extracts all text content). No manual GitHub API calls.
+- **Background tasks**: `POST /api/create-project` triggers `invoke_code_agent` and `invoke_market_agent` as `asyncio.create_task` (fire-and-forget). Analysis runs after the response is returned.
+- **Score generation**: After code and market analyses complete, `generate_overall_project_score()` is called automatically. It uses the LLM to produce a 0-10 score saved as 0-1 scale in `overall_score`.
+- **DB auto-migration**: `init_db()` uses try/except `ALTER TABLE ADD COLUMN` to add columns if they don't exist. Safe to run on existing DBs.
 
 ## API Endpoints
 
-### Health Check
-- `GET /health` - Basic health check (`{"status": "ok"}`)
+### Health
+- `GET /health`
 
 ### Hackathons
-- `POST /api/create-hackathon` - Create hackathon with `criteria` (e.g., "Code Quality, Innovation, Tech Stack")
-- `GET /api/get-hackathon/{id}` - Get hackathon details
-- `GET /api/get-all-hackathons` - List all hackathons
+- `POST /api/create-hackathon` - Body: `name`, `description`, `theme`, `criteria` (comma-separated), `deadline` (ISO timestamp), `isAllowed` (bool)
+- `GET /api/get-hackathon/{id}`
+- `GET /api/get-all-hackathons`
 
 ### Projects
-- `POST /api/create-project` - Submit project to hackathon (body: `shortDescription`, `longDescription`, `githubLink`, `demoLink` (optional), `theme`, `hackathonId`)
-- `GET /api/get-project/{id}` - Get project with analyses and score
-- `GET /api/get-hackathon-projects/{hackathon_id}` - List projects in hackathon (includes `demo_link`)
-- `GET /api/get-all` - List all projects
+- `POST /api/create-project` - Body: `shortDescription`, `longDescription`, `githubLink`, `demoLink` (optional), `theme`, `hackathonId` (optional), `projectType` (optional, enum value from `project_type` e.g. `REACT`, `NEXT_JS`, `FASTAPI`)
+- `GET /api/get-project/{project_id}` - Returns project with analyses and score
+- `GET /api/get-hackathon-projects/{hackathon_id}`
+- `GET /api/get-all`
 
-### Scoring (LLM-Generated)
-- `GET /api/get-project-score/{project_id}` - Get LLM-generated overall score (0-10) with explanation
-  - Score based on: theme alignment, code quality, market analysis, hackathon criteria
-  - Returns `overall_score`, `score_explanation` (bullet points)
-- `GET /api/get-hackathon-leaderboard/{hackathon_id}` - Get ranked projects by overall score
+### Scoring
+- `GET /api/get-project-score/{project_id}` - Returns `overall_score` (0-10 scale) with `score_explanation`
+- `GET /api/get-hackathon-leaderboard/{hackathon_id}` - Ranked projects by score
+
+### Chat
+- `POST /api/chat-agent/simple` - Body: `question`. Simple Q&A without project context
+- `POST /api/chat-agent` - Body: `question`, `project_id` (optional), `chathistory` (optional). Project-aware chat that loads code analysis context
 
 ### Legacy
 - `POST /api/search` - Semantic search projects
 - `POST /api/review` - Mark project as reviewed
 
-## Code Analysis (codeagent.py)
-
-### How it works:
-1. Fetches repository contents via GitHub API (prioritizes source code over config files)
-2. Creates vectorstore from code files using Chroma + HuggingFace embeddings
-3. Evaluates hackathon criteria against actual code:
-   - **Code Quality** - Analyzes readability, modularity, error handling, best practices
-   - **Tech Stack** - Detects frameworks, libraries, languages from code
-   - **Innovation** - Assessed from project description (NOT code)
-   - **Custom criteria** - Evaluated against actual code with specific feedback
-4. LLM explicitly states whether project meets each criterion or what's missing
-
-### Key Functions:
-- `fetch_repo_contents()` - Fetches up to 50 source files + 10 config files
-- `query_codebase_detailed()` - Analyzes code with hackathon criteria context (10 docs, 6000 chars)
-- `assess_innovation()` - Evaluates innovation from project description only
-- `generate_overall_project_score()` - Triggers LLM scoring after analyses complete
-
-## Market Analysis (marketagent.py)
-
-### How it works:
-1. Fetches README from GitHub repository
-2. Uses web search (DDGS) for market data
-3. Analyzes: target audience, market potential, competitors, pitfalls, revenue models
-4. Updates `market_agent_analysis` JSONB in projects table
-5. Triggers overall score generation after completion
-
-## LLM-Based Scoring (crudagent.py)
-
-### How it works:
-1. Called automatically after code + market analyses complete
-2. LLM evaluates ALL factors:
-   - Theme alignment (does project fit hackathon theme?)
-   - Code quality (from code analysis)
-   - Market potential (from market analysis)
-   - Hackathon criteria compliance
-3. Returns JSON: `{"score": 0-10, "reasons": ["reason1", "reason2"]}`
-4. Score saved to `projects.overall_score` (0-1 scale)
-5. Explanation saved to `projects.score_explanation` (bullet points)
-
-### Score Explanation Format:
-```
-- Good theme alignment with AI focus
-- Code quality needs improvement in error handling
-- Strong market potential in healthcare
-```
-
 ## Database Schema
 
-```
-hackathons:
-  id SERIAL PRIMARY KEY
-  name VARCHAR(255) NOT NULL
-  description TEXT DEFAULT ''
-  theme TEXT DEFAULT ''
-  is_allowed BOOLEAN DEFAULT FALSE
-  criteria TEXT DEFAULT '' (comma-separated: "Code Quality, Innovation")
-  deadline TIMESTAMP
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+See `SQL_SCHEMA.sql` for the full schema. Key tables:
 
-projects:
-  id SERIAL PRIMARY KEY
-  project_id VARCHAR(255) UNIQUE NOT NULL
-  hackathon_id INTEGER REFERENCES hackathons(id) ON DELETE SET NULL
-  short_description TEXT DEFAULT ''
-  long_description TEXT DEFAULT ''
-  github_link TEXT DEFAULT ''
-  demo_link TEXT DEFAULT NULL
-  theme TEXT DEFAULT ''
-  is_reviewed BOOLEAN DEFAULT FALSE
-  code_agent_analysis JSONB DEFAULT '[]'::jsonb
-  market_agent_analysis JSONB DEFAULT '[]'::jsonb
-  overall_score DECIMAL(3,2) DEFAULT NULL (0-1 scale, LLM-generated)
-  score_explanation TEXT DEFAULT '' (bullet points)
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+**hackathons**: `id`, `name`, `description`, `theme`, `is_allowed`, `criteria` (comma-separated string), `deadline`, `created_at`
 
-evaluations: (legacy, kept for reference)
-  id SERIAL PRIMARY KEY
-  project_id VARCHAR(255) REFERENCES projects(project_id)
-  criteria_name VARCHAR(255) NOT NULL
-  score DECIMAL(3,2) DEFAULT 0.00
-  remarks TEXT DEFAULT ''
-  agent_type VARCHAR(50) DEFAULT 'code'
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-```
+**projects**: `id`, `project_id` (UUID), `hackathon_id` (FK), `short_description`, `long_description`, `github_link`, `demo_link`, `theme`, `is_reviewed`, `code_agent_analysis` (JSONB), `market_agent_analysis` (JSONB), `overall_score` (DECIMAL 0-1), `score_explanation` (text), `project_type` (enum), `created_at`
 
-## Criteria Format
+**project_type enum**: `VANILLA_JS`, `REACT`, `NEXT_JS`, `VUE`, `NUXT`, `ANGULAR`, `SVELTE`, `SVELTEKIT`, `ASTRO`, `REMIX`, `TAILWIND`, `NODE_EXPRESS`, `FASTAPI`, `DJANGO`, `SPRING_BOOT`, `GIN`, `RAILS`, `LARAVEL`, `ACTIX`, `SWIFT_UI`, `KOTLIN_JETPACK`, `REACT_NATIVE`, `EXPO`, `FLUTTER`, `DOTNET_MAUI`, `IONIC`, `NATIVESCRIPT`, `OTHER`
 
-`criteria` TEXT in hackathons:
-```
-"Code Quality, Innovation, Tech Stack, Market Potential"
-```
+**evaluations** (legacy): `id`, `project_id` (FK), `criteria_name`, `score`, `remarks`, `agent_type`
 
-The AI generates specific questions for each criteria and evaluates code against them.
+## Code Analysis Flow
 
-## Test Commands
+1. Parse GitHub URL
+2. Ingest repo via gitingest (clones temporarily, extracts all text files)
+3. Split content into chunks, embed with HuggingFace, store in Chroma vectorstore
+4. For each hackathon criterion, query the vectorstore with a specific prompt
+5. Exception: Innovation is assessed from project description only, not code
 
-```bash
-# Start server
-python server.py
+## Market Analysis Flow
 
-# 1. Create a hackathon with criteria
-curl -X POST http://localhost:8000/api/create-hackathon \
-  -H "Content-Type: application/json" \
-  -d '{"name": "AI Hackathon", "description": "Build with AI", "criteria": "Code Quality, Innovation, Tech Stack"}'
-
-# 2. Get all hackathons
-curl http://localhost:8000/api/get-all-hackathons
-
-# 3. Get specific hackathon
-curl http://localhost:8000/api/get-hackathon/1
-
-# 4. Submit project to hackathon (with demo link)
-curl -X POST http://localhost:8000/api/create-project \
-  -H "Content-Type: application/json" \
-  -d '{"shortDescription": "My AI Project", "longDescription": "Detailed description", "githubLink": "https://github.com/user/repo", "demoLink": "https://myproject.demo.com", "hackathonId": 1}'
-
-# 5. Get project (after evaluation - includes score)
-curl http://localhost:8000/api/get-project/{project_id}
-
-# 6. Get projects in hackathon (includes demo_link)
-curl http://localhost:8000/api/get-hackathon-projects/1
-
-# 7. Get project score (LLM-generated with explanation)
-curl http://localhost:8000/api/get-project-score/{project_id}
-
-# 8. Get leaderboard (ranked by overall_score)
-curl http://localhost:8000/api/get-hackathon-leaderboard/1
-
-# OpenAPI docs
-# Swagger UI: http://localhost:8000/docs
-# ReDoc: http://localhost:8000/redoc
-```
-
-## SQL Schema File
-
-See `SQL_SCHEMA.sql` for complete database schema with migrations.
+1. Fetch README from GitHub repo via gitingest
+2. If README < 50 chars, returns "insufficient data" for all questions
+3. Uses `ddgs` (DuckDuckGo) for web search to supplement market data
+4. Evaluates 5 market questions: audience, potential, competitors, pitfalls, revenue
