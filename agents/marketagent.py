@@ -26,7 +26,7 @@ router = APIRouter()
 def get_llm():
     return ChatOpenAI(
         model=os.getenv("FREE_LLM_MODEL", "liquid/lfm-2.5-1.2b-thinking:free"),
-        base_url="https://openrouter.ai/api/v1",
+        base_url=os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1"),
         api_key=os.getenv("OPENROUTER_API_KEY"),
         temperature=0.2,
     )
