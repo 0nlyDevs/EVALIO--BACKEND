@@ -16,7 +16,7 @@ An AI-powered hackathon project evaluation platform that automates code analysis
 ### Prerequisites
 
 - Python 3.8+
-- PostgreSQL running on `localhost:5432` with database `judgy`
+- PostgreSQL running with a database (configure `DB_HOST`, `DB_PORT`, `DB_NAME`)
 - GitHub API token (optional, increases rate limit)
 
 ### Setup
@@ -29,8 +29,13 @@ cp .env.example .env
 ```
 Edit `.env` and fill in your values:
 - `LLM_API_KEY` - Your LLM API key
+- `LLM_BASE_URL` - Your LLM API endpoint
 - `HF_TOKEN` - HuggingFace token for embeddings
-- `DB_USER`, `DB_PASSWORD` - PostgreSQL credentials
+- `DB_HOST` - Database host (default: localhost)
+- `DB_PORT` - Database port (default: 5432)
+- `DB_NAME` - Database name (default: evalio)
+- `DB_USER` - Database user (default: postgres)
+- `DB_PASSWORD` - Database password
 - `GITHUB_TOKEN` - GitHub API token (optional)
 
 3. Install dependencies:
@@ -53,10 +58,14 @@ The server runs on `http://0.0.0.0:8000`
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `LLM_API_KEY` | LLM API key | Required |
+| `LLM_BASE_URL` | LLM API endpoint | `https://api.example.com/v1` |
 | `FREE_LLM_MODEL` | LLM model to use | `liquid/lfm-2.5-1.2b-thinking:free` |
 | `HF_TOKEN` | HuggingFace token | Required |
 | `EMBEDDING_MODEL` | Embedding model | `sentence-transformers/all-MiniLM-L6-v2` |
-| `DB_USER` | PostgreSQL username | Required |
+| `DB_HOST` | PostgreSQL host | `localhost` |
+| `DB_PORT` | PostgreSQL port | `5432` |
+| `DB_NAME` | PostgreSQL database | `evalio` |
+| `DB_USER` | PostgreSQL username | `postgres` |
 | `DB_PASSWORD` | PostgreSQL password | Required |
 | `GITHUB_TOKEN` | GitHub API token | Optional |
 | `BASE_PROMPT` | Base prompt template | Optional |

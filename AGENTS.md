@@ -11,7 +11,7 @@ Runs on `http://0.0.0.0:8000`
 ## Setup Requirements
 
 1. Copy `.env.example` to `.env` and fill in values
-2. PostgreSQL must be running on localhost:5432 with database `judgy`
+2. PostgreSQL must be reachable (configure `DB_HOST`, `DB_PORT`, `DB_NAME`)
 3. Install deps: `pip install -r requirements.txt`
 
 ## Required Environment Variables
@@ -21,13 +21,17 @@ Runs on `http://0.0.0.0:8000`
 - `FREE_LLM_MODEL` - Default: `liquid/lfm-2.5-1.2b-thinking:free`
 - `HF_TOKEN` - HuggingFace token
 - `EMBEDDING_MODEL` - Default: `sentence-transformers/all-MiniLM-L6-v2`
-- `DB_USER`, `DB_PASSWORD` - PostgreSQL credentials
+- `DB_HOST` - Database host, default: `localhost`
+- `DB_PORT` - Database port, default: `5432`
+- `DB_NAME` - Database name, default: `evalio`
+- `DB_USER` - Database user, default: `postgres`
+- `DB_PASSWORD` - Database password
 - `GITHUB_TOKEN` - GitHub API token (optional, increases rate limit)
 
 ## Project Structure
 
 - `server.py` - FastAPI entry point; loads `.env` via `dotenv`, initializes DB on startup
-- `db.py` - PostgreSQL connection (`host=localhost:5432, database=judgy`) and table creation
+- `db.py` - PostgreSQL connection (host/port/database from env) and table creation
 - `agents/` - Contains 4 agent routers:
   - `marketagent.py` - Market analysis (web search + README analysis)
   - `codeagent.py` - Code analysis (GitHub repo analysis via API)

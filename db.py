@@ -5,8 +5,8 @@ import os
 
 def get_database_connection():
     conn = psycopg2.connect(
-        host="localhost",
-        port=5432,
+        host=os.getenv("DB_HOST", "localhost"),
+        port=int(os.getenv("DB_PORT", "5432")),
         database=os.getenv("DB_NAME", "evalio"),
         user=os.getenv("DB_USER", "postgres"),
         password=os.getenv("DB_PASSWORD", "postgres"),
